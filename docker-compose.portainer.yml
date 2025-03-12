@@ -1,0 +1,90 @@
+version: '3.8'
+
+services:
+  gnss-app:
+    image: ${DOCKER_REGISTRY:-ghcr.io}/nohrtech/gnss:latest
+    container_name: gnss-app
+    restart: unless-stopped
+    networks:
+      - gnss-network
+    environment:
+      - FLASK_APP=app
+      - FLASK_ENV=production
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@gnss-db:5432/gnss_data
+      - MONGO_URI=mongodb://${MONGO_USER:-admin}:${MONGO_PASSWORD:-admin}@gnss-mongodb:27017/
+      - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
+    volumes:
+      - gnss-uploads:/app/app/uploads
+    depends_on:
+      - gnss-db
+      - gnss-mongodb
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 512M
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.gnss.rule=Host(`${DOMAIN:-gnss.local}`)"
+        - "traefik.http.services.gnss.loadbalancer.server.port=5000"
+
+  gnss-db:
+    image: postgis/postgis:16-3.4
+    container_name: gnss-db
+    restart: unless-stopped
+    networks:
+      - gnss-network
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=gnss_data
+    volumes:
+      - gnss-postgres-data:/var/lib/postgresql/data
+      - ./docker/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 512M
+
+  gnss-mongodb:
+    image: mongo:6
+    container_name: gnss-mongodb
+    restart: unless-stopped
+    networks:
+      - gnss-network
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_USER:-admin}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD:-admin}
+    volumes:
+      - gnss-mongodb-data:/data/db
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 512M
+
+networks:
+  gnss-network:
+    driver: overlay
+    attachable: true
+
+volumes:
+  gnss-postgres-data:
+    driver: local
+  gnss-mongodb-data:
+    driver: local
+  gnss-uploads:
+    driver: local
