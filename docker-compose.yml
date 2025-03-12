@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_APP=app
+      - FLASK_ENV=development
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/gnss_data
+      - MONGO_URI=mongodb://mongodb:27017/
+      - SECRET_KEY=dev-secret-key
+    volumes:
+      - ./app:/app/app
+      - ./migrations:/app/migrations
+    depends_on:
+      - db
+      - mongodb
+
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=gnss_data
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  mongodb:
+    image: mongo:6
+    volumes:
+      - mongodb_data:/data/db
+    ports:
+      - "27017:27017"
+
+volumes:
+  postgres_data:
+  mongodb_data:

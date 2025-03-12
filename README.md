@@ -43,10 +43,38 @@ A web-based application for processing and visualizing GNSS data from various fo
 
 ## Installation
 
+### Using Docker (Recommended)
+
+1. Install Docker and Docker Compose on your system
+   - [Docker Desktop for Windows](https://www.docker.com/products/docker-desktop)
+   - [Docker Engine for Linux](https://docs.docker.com/engine/install/)
+
+2. Clone the repository:
+   ```bash
+   git clone https://github.com/nohrtech/gnss.git
+   cd gnss
+   ```
+
+3. Start the application using Docker Compose:
+   ```bash
+   docker-compose up -d
+   ```
+
+   This will:
+   - Build and start the Flask application
+   - Start PostgreSQL with PostGIS extension
+   - Start MongoDB
+   - Initialize all required databases and tables
+   - Set up the necessary environment
+
+4. Access the application at `http://localhost:5000`
+
+### Manual Installation
+
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/nohrtech_gnss.git
-   cd nohrtech_gnss
+   git clone https://github.com/nohrtech/gnss.git
+   cd gnss
    ```
 
 2. Install Python dependencies:
@@ -83,6 +111,23 @@ A web-based application for processing and visualizing GNSS data from various fo
 - Database migrations are handled through Flask-Migrate
 - Frontend assets are organized in the `app/static` directory
 - Templates are in the `app/templates` directory
+
+### Docker Development Tips
+
+- View logs: `docker-compose logs -f`
+- Rebuild containers: `docker-compose up -d --build`
+- Access PostgreSQL: `docker-compose exec db psql -U postgres -d gnss_data`
+- Access MongoDB: `docker-compose exec mongodb mongosh`
+
+## Database Schema
+
+The application uses PostgreSQL with PostGIS for storing:
+- User accounts
+- Base station information
+- Dataset metadata
+- Analysis results
+
+MongoDB is used for storing raw GNSS data and temporary processing results.
 
 ## License
 
