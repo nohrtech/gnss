@@ -1,0 +1,20 @@
+# Format 1: Timestamp X Y Z Quality Satellites
+# Time in GPS Week Seconds, Coordinates in ECEF (meters)
+# YYYY-MM-DD HH:MM:SS.sss X Y Z Q SAT
+2025-03-11 13:14:44.000 -2297292.175 -3983617.223 4593974.831 2 8
+2025-03-11 13:14:45.000 -2297292.182 -3983617.229 4593974.838 2 8
+2025-03-11 13:14:46.000 -2297292.179 -3983617.226 4593974.835 2 9
+
+# Format 2: E N U Time
+# Local ENU coordinates (meters) relative to base station
+# E N U YYYY-MM-DD HH:MM:SS.sss
+-123.456 789.012 45.678 2025-03-11 13:14:44.000
+-123.459 789.015 45.681 2025-03-11 13:14:45.000
+-123.457 789.013 45.679 2025-03-11 13:14:46.000
+
+# Format 3: Simple XYZ (no time)
+# Local coordinates in meters
+# X Y Z
+-2297.175 -3983.223 4593.831
+-2297.182 -3983.229 4593.838
+-2297.179 -3983.226 4593.835

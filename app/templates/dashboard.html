@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title float-start">GNSS Analysis Dashboard</h5>
+                <button class="btn btn-primary float-end" id="uploadBtn">Upload New Dataset</button>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div id="map" style="height: 400px;"></div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="chart-container" style="height: 400px;">
+                            <canvas id="accuracyChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title">Analysis Results</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-striped" id="resultsTable">
+                        <thead>
+                            <tr>
+                                <th>Dataset</th>
+                                <th>Date</th>
+                                <th>Type</th>
+                                <th>Horizontal RMSE</th>
+                                <th>Vertical RMSE</th>
+                                <th>Points</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Populated by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal for detailed analysis -->
+<div class="modal fade" id="analysisModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Detailed Analysis</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Horizontal Accuracy</h6>
+                        <ul class="list-group">
+                            <li class="list-group-item">RMSE: <span id="horizontalRMSE"></span></li>
+                            <li class="list-group-item">STD: <span id="horizontalSTD"></span></li>
+                            <li class="list-group-item">Mean: <span id="horizontalMean"></span></li>
+                            <li class="list-group-item">Max: <span id="horizontalMax"></span></li>
+                            <li class="list-group-item">Min: <span id="horizontalMin"></span></li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Vertical Accuracy</h6>
+                        <ul class="list-group">
+                            <li class="list-group-item">RMSE: <span id="verticalRMSE"></span></li>
+                            <li class="list-group-item">STD: <span id="verticalSTD"></span></li>
+                            <li class="list-group-item">Mean: <span id="verticalMean"></span></li>
+                            <li class="list-group-item">Max: <span id="verticalMax"></span></li>
+                            <li class="list-group-item">Min: <span id="verticalMin"></span></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <h6>Reference Position</h6>
+                        <p>Latitude: <span id="refLat"></span>, Longitude: <span id="refLon"></span>, Altitude: <span id="refAlt"></span></p>
+                        <p>Reference Mode: <span id="refMode"></span></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+{% endblock %}

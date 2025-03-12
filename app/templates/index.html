@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GNSS Data Processing</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <style>
+        #map { height: 400px; }
+        .chart-container { height: 300px; margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="#">GNSS Data Processing</a>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="row">
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header">
+                        Upload Data
+                    </div>
+                    <div class="card-body">
+                        <form id="upload-form">
+                            <div class="mb-3">
+                                <label for="file" class="form-label">GNSS Data File</label>
+                                <input type="file" class="form-control" id="file" accept=".nmea,.rnx,.rinex,.xyz">
+                            </div>
+                            <button type="submit" class="btn btn-primary">Upload</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header">
+                        Map View
+                    </div>
+                    <div class="card-body">
+                        <div id="map"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row mt-4">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        Position Accuracy
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="accuracy-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        Satellite Count
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="satellite-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    
+    <script>
+        // Initialize Leaflet map
+        const map = L.map('map').setView([0, 0], 2);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+        
+        // Initialize Charts
+        const accuracyChart = new Chart(document.getElementById('accuracy-chart'), {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Horizontal Accuracy',
+                    data: [],
+                    borderColor: 'rgb(75, 192, 192)',
+                    tension: 0.1
+                }]
+            }
+        });
+        
+        const satelliteChart = new Chart(document.getElementById('satellite-chart'), {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Number of Satellites',
+                    data: [],
+                    borderColor: 'rgb(153, 102, 255)',
+                    tension: 0.1
+                }]
+            }
+        });
+        
+        // Handle file upload
+        document.getElementById('upload-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const fileInput = document.getElementById('file');
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            
+            try {
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                
+                if (response.ok) {
+                    alert('File uploaded successfully!');
+                    // Process the uploaded data
+                    processData(data.dataset_id);
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error uploading file: ' + error);
+            }
+        });
+        
+        async function processData(datasetId) {
+            try {
+                const response = await fetch(`/api/process/${datasetId}`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                
+                if (response.ok) {
+                    // Update visualizations with the processed data
+                    updateVisualizations(data.results);
+                } else {
+                    alert('Error processing data: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error: ' + error);
+            }
+        }
+        
+        function updateVisualizations(results) {
+            // Update map
+            if (results.reference_position) {
+                const pos = [results.reference_position.latitude, results.reference_position.longitude];
+                map.setView(pos, 15);
+                L.marker(pos).addTo(map);
+            }
+            
+            // Update charts
+            accuracyChart.data.labels = Array.from({length: results.num_points}, (_, i) => i + 1);
+            accuracyChart.data.datasets[0].data = Array(results.num_points).fill(results.horizontal.rmse);
+            accuracyChart.update();
+            
+            // For now, just show a placeholder for satellite count
+            satelliteChart.data.labels = Array.from({length: results.num_points}, (_, i) => i + 1);
+            satelliteChart.data.datasets[0].data = Array(results.num_points).fill(0);
+            satelliteChart.update();
+        }
+    </script>
+</body>
+</html>
