@@ -17,11 +17,6 @@ ALLOWED_EXTENSIONS = {'nmea', 'rnx', 'rinex', 'xyz'}
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-@bp.before_app_first_request
-def setup_upload_directory():
-    upload_dir = os.path.join(current_app.root_path, 'uploads')
-    os.makedirs(upload_dir, exist_ok=True)
-
 @bp.route('/upload', methods=['POST'])
 @login_required
 def upload_file():
@@ -128,127 +123,79 @@ def upload_file():
 @bp.route('/process/<int:dataset_id>', methods=['POST'])
 @login_required
 def process_dataset(dataset_id):
-    """Process uploaded dataset and return JSON response."""
-    try:
-        dataset = Dataset.query.get_or_404(dataset_id)
-        if dataset.user_id != current_user.id:
-            return jsonify({'error': 'Unauthorized access'}), 403
-
-        # Process the file
-        file_path = os.path.join(current_app.root_path, 'uploads', dataset.name)
-        if not os.path.exists(file_path):
-            return jsonify({'error': 'Dataset file not found'}), 404
-
-        # Get base station if specified
-        base_coords = None
-        if dataset.base_station_id:
-            base = BaseStation.query.get(dataset.base_station_id)
-            if base:
-                base_coords = (base.location.latitude, base.location.longitude, base.altitude)
-
-        # Initialize processor and process file
-        processor = GNSSProcessor(base_station_coords=base_coords)
-        start_time = datetime.now()
-
-        try:
-            if dataset.format_type in ['nmea']:
-                with open(file_path, 'r') as f:
-                    results = processor.process_nmea(f.read())
-            elif dataset.format_type in ['rnx', 'rinex']:
-                results = processor.process_rinex(file_path)
-            elif dataset.format_type == 'xyz':
-                results = processor.process_xyz(file_path)
-            else:
-                return jsonify({'error': 'Unsupported file format'}), 400
-
-        except Exception as e:
-            dataset.processing_status = 'failed'
-            db.session.commit()
-            return jsonify({'error': f'Processing error: {str(e)}'}), 500
-
-        # Save results
-        duration = (datetime.now() - start_time).total_seconds()
-        analysis = AnalysisResult(
-            dataset_id=dataset.id,
-            reference_mode='fixed' if base_coords else 'floating',
-            horizontal_rmse=results['horizontal']['rmse'],
-            horizontal_std=results['horizontal']['std'],
-            horizontal_mean=results['horizontal']['mean'],
-            horizontal_max=results['horizontal']['max'],
-            horizontal_min=results['horizontal']['min'],
-            vertical_rmse=results['vertical']['rmse'],
-            vertical_std=results['vertical']['std'],
-            vertical_mean=results['vertical']['mean'],
-            vertical_max=results['vertical']['max'],
-            vertical_min=results['vertical']['min'],
-            reference_latitude=results['reference_position']['latitude'],
-            reference_longitude=results['reference_position']['longitude'],
-            reference_altitude=results['reference_position']['altitude'],
-            num_points=results['num_points'],
-            processing_duration=duration,
-            solution_quality=results.get('solution_quality'),
-            xyz_stats=results.get('xyz_stats')
-        )
-
-        db.session.add(analysis)
-        dataset.processing_status = 'completed'
-        db.session.commit()
-
-        return jsonify({
-            'success': True,
-            'dataset_id': dataset.id,
-            'results': analysis.to_dict()
-        })
-
-    except Exception as e:
-        current_app.logger.error(f"Processing error: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-@bp.route('/results/<int:dataset_id>', methods=['GET'])
-@login_required
-def get_results(dataset_id):
+    """Process an uploaded dataset."""
+    logger.info(f"=== Starting Dataset Processing {dataset_id} ===")
     try:
         dataset = Dataset.query.get_or_404(dataset_id)
         
-        # Check ownership
+        # Security check
         if dataset.user_id != current_user.id:
-            return jsonify({'error': 'Unauthorized access'}), 403
+            logger.warning(f"Unauthorized access attempt to dataset {dataset_id} by user {current_user.id}")
+            response = make_response(json.dumps({
+                'success': False,
+                'error': 'Unauthorized access'
+            }), 403)
+            response.headers['Content-Type'] = 'application/json'
+            return response
+
+        # Process the dataset
+        processor = GNSSProcessor(dataset)
+        result = processor.process()
+        
+        if result:
+            logger.info(f"Dataset {dataset_id} processed successfully")
+            response = make_response(json.dumps({
+                'success': True,
+                'message': 'Dataset processed successfully'
+            }), 200)
+        else:
+            logger.error(f"Failed to process dataset {dataset_id}")
+            response = make_response(json.dumps({
+                'success': False,
+                'error': 'Processing failed'
+            }), 500)
             
-        results = AnalysisResult.query.filter_by(dataset_id=dataset_id).all()
-        return jsonify({
-            'dataset': {
-                'id': dataset.id,
-                'name': dataset.name,
-                'format_type': dataset.format_type,
-                'upload_date': dataset.upload_date.isoformat(),
-                'processing_status': dataset.processing_status
-            },
-            'results': [result.to_dict() for result in results]
-        }), 200
+        response.headers['Content-Type'] = 'application/json'
+        return response
+
     except Exception as e:
-        current_app.logger.error(f"Error fetching results: {str(e)}")
-        return jsonify({'error': 'Error fetching results'}), 500
+        logger.error(f"Error processing dataset {dataset_id}: {str(e)}")
+        logger.error(traceback.format_exc())
+        response = make_response(json.dumps({
+            'success': False,
+            'error': f'Processing error: {str(e)}'
+        }), 500)
+        response.headers['Content-Type'] = 'application/json'
+        return response
 
 @bp.route('/base-stations', methods=['GET'])
 @login_required
-def list_base_stations():
-    """List available base stations."""
+def get_base_stations():
+    """Get list of base stations."""
+    logger.info("=== Fetching Base Stations ===")
     try:
-        stations = BaseStation.query.filter_by(is_active=True).all()
-        return jsonify([{
-            'id': station.id,
-            'name': station.name,
-            'latitude': station.location.latitude,
-            'longitude': station.location.longitude,
-            'altitude': station.altitude,
-            'description': station.description
-        } for station in stations])
+        base_stations = BaseStation.query.all()
+        stations_data = []
+        
+        for station in base_stations:
+            stations_data.append({
+                'id': station.id,
+                'name': station.name,
+                'latitude': station.latitude,
+                'longitude': station.longitude
+            })
+            
+        logger.info(f"Returning {len(stations_data)} base stations")
+        response = make_response(json.dumps(stations_data), 200)
+        response.headers['Content-Type'] = 'application/json'
+        return response
+
     except Exception as e:
-        current_app.logger.error(f"Error fetching base stations: {str(e)}")
-        return jsonify({
+        logger.error(f"Error fetching base stations: {str(e)}")
+        logger.error(traceback.format_exc())
+        response = make_response(json.dumps({
             'success': False,
-            'error': str(e)
-        }), 500
+            'error': f'Error fetching base stations: {str(e)}'
+        }), 500)
+        response.headers['Content-Type'] = 'application/json'
+        return response
