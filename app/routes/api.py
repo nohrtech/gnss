@@ -1,12 +1,16 @@
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify, current_app, make_response
 from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
 from ..processors.gnss_processor import GNSSProcessor
 from ..models import Dataset, BaseStation, AnalysisResult, db
 import os
 from datetime import datetime
+import logging
+import traceback
+import json
 
 bp = Blueprint('api', __name__)
+logger = logging.getLogger(__name__)
 
 ALLOWED_EXTENSIONS = {'nmea', 'rnx', 'rinex', 'xyz'}
 
@@ -21,50 +25,105 @@ def setup_upload_directory():
 @bp.route('/upload', methods=['POST'])
 @login_required
 def upload_file():
-    """Handle file upload and return JSON response."""
+    """Handle file upload with detailed logging."""
+    logger.info("=== Starting File Upload ===")
+    logger.info(f"Request Method: {request.method}")
+    logger.info(f"Request Headers: {dict(request.headers)}")
+    logger.info(f"Request Form Data: {dict(request.form)}")
+    logger.info(f"Request Files: {list(request.files.keys())}")
+    
     try:
         if 'file' not in request.files:
-            return jsonify({'error': 'No file provided'}), 400
+            logger.error("No file part in request")
+            response = make_response(json.dumps({
+                'success': False,
+                'error': 'No file provided'
+            }), 400)
+            response.headers['Content-Type'] = 'application/json'
+            return response
 
         file = request.files['file']
+        logger.info(f"File received: {file.filename}, Content-Type: {file.content_type}")
+        
         if file.filename == '':
-            return jsonify({'error': 'No file selected'}), 400
+            logger.error("Empty filename received")
+            response = make_response(json.dumps({
+                'success': False,
+                'error': 'No file selected'
+            }), 400)
+            response.headers['Content-Type'] = 'application/json'
+            return response
 
         if not allowed_file(file.filename):
-            return jsonify({'error': 'Invalid file type. Supported formats: NMEA, RINEX, XYZ'}), 400
+            logger.error(f"Invalid file type: {file.filename}")
+            response = make_response(json.dumps({
+                'success': False,
+                'error': 'Invalid file type. Supported formats: NMEA, RINEX, XYZ'
+            }), 400)
+            response.headers['Content-Type'] = 'application/json'
+            return response
 
         # Create uploads directory if it doesn't exist
         upload_dir = os.path.join(current_app.root_path, 'uploads')
         os.makedirs(upload_dir, exist_ok=True)
+        logger.info(f"Upload directory verified: {upload_dir}")
 
         # Save file
         filename = secure_filename(file.filename)
         file_path = os.path.join(upload_dir, filename)
+        logger.info(f"Saving file to: {file_path}")
         file.save(file_path)
+        logger.info("File saved successfully")
 
         # Create dataset entry
-        dataset = Dataset(
-            name=filename,
-            format_type=filename.rsplit('.', 1)[1].lower(),
-            user_id=current_user.id,
-            base_station_id=request.form.get('base_station_id'),
-            processing_status='pending'
-        )
-        db.session.add(dataset)
-        db.session.commit()
+        try:
+            dataset = Dataset(
+                name=filename,
+                format_type=filename.rsplit('.', 1)[1].lower(),
+                user_id=current_user.id,
+                base_station_id=request.form.get('base_station_id'),
+                processing_status='pending'
+            )
+            db.session.add(dataset)
+            db.session.commit()
+            logger.info(f"Dataset created with ID: {dataset.id}")
 
-        return jsonify({
-            'success': True,
-            'dataset_id': dataset.id,
-            'filename': filename
-        })
+            response_data = {
+                'success': True,
+                'dataset_id': dataset.id,
+                'filename': filename
+            }
+            logger.info(f"Sending response: {response_data}")
+            
+            response = make_response(json.dumps(response_data), 200)
+            response.headers['Content-Type'] = 'application/json'
+            return response
+
+        except Exception as e:
+            logger.error(f"Database error: {str(e)}")
+            logger.error(traceback.format_exc())
+            try:
+                os.remove(file_path)
+                logger.info("Cleaned up uploaded file after database error")
+            except:
+                logger.warning("Failed to clean up uploaded file")
+                
+            response = make_response(json.dumps({
+                'success': False,
+                'error': 'Database error while creating dataset'
+            }), 500)
+            response.headers['Content-Type'] = 'application/json'
+            return response
 
     except Exception as e:
-        current_app.logger.error(f"Upload error: {str(e)}")
-        return jsonify({
+        logger.error(f"Unexpected error in upload: {str(e)}")
+        logger.error(traceback.format_exc())
+        response = make_response(json.dumps({
             'success': False,
-            'error': str(e)
-        }), 500
+            'error': f'Unexpected error: {str(e)}'
+        }), 500)
+        response.headers['Content-Type'] = 'application/json'
+        return response
 
 @bp.route('/process/<int:dataset_id>', methods=['POST'])
 @login_required
