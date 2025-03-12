@@ -13,22 +13,27 @@ ALLOWED_EXTENSIONS = {'nmea', 'rnx', 'rinex', 'xyz'}
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+@bp.before_app_first_request
+def setup_upload_directory():
+    upload_dir = os.path.join(current_app.root_path, 'uploads')
+    os.makedirs(upload_dir, exist_ok=True)
+
 @bp.route('/upload', methods=['POST'])
 @login_required
 def upload_file():
-    # Check if file was included
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file provided'}), 400
-    
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No file selected'}), 400
-        
-    if not allowed_file(file.filename):
-        return jsonify({'error': 'Invalid file type. Supported formats: NMEA, RINEX, XYZ'}), 400
-
     try:
-        # Create uploads directory if it doesn't exist
+        # Check if file was included
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+        
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+            
+        if not allowed_file(file.filename):
+            return jsonify({'error': 'Invalid file type. Supported formats: NMEA, RINEX, XYZ'}), 400
+
+        # Ensure upload directory exists
         upload_dir = os.path.join(current_app.root_path, 'uploads')
         os.makedirs(upload_dir, exist_ok=True)
         
@@ -42,7 +47,7 @@ def upload_file():
             name=filename,
             format_type=filename.rsplit('.', 1)[1].lower(),
             user_id=current_user.id,
-            base_station_id=request.form.get('base_station_id', None),
+            base_station_id=request.form.get('base_station_id'),
             processing_status='pending'
         )
         db.session.add(dataset)
