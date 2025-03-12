@@ -1,98 +1,114 @@
 document.addEventListener('DOMContentLoaded', function() {
-    loadBaseStations();
-    setupUploadForm();
-});
-
-function setupUploadForm() {
     const form = document.getElementById('uploadForm');
     const progressBar = document.querySelector('#uploadProgress .progress-bar');
     const progressDiv = document.getElementById('uploadProgress');
+    const statusDiv = document.getElementById('uploadStatus');
+
+    loadBaseStations();
 
     form.addEventListener('submit', async function(e) {
         e.preventDefault();
         progressDiv.classList.remove('d-none');
         progressBar.style.width = '0%';
+        statusDiv.textContent = 'Uploading...';
 
         try {
-            // Upload file
             const formData = new FormData(form);
-            const uploadResponse = await fetch('/api/upload', {
+            const response = await fetch('/api/upload', {
                 method: 'POST',
-                body: formData
+                body: formData,
+                headers: {
+                    'Accept': 'application/json'
+                }
             });
 
-            const responseText = await uploadResponse.text();
-            let uploadData;
-            
+            // First try to get the response text
+            const responseText = await response.text();
+            console.log('Raw server response:', responseText);
+
+            // Then try to parse it as JSON
+            let data;
             try {
-                uploadData = JSON.parse(responseText);
+                data = JSON.parse(responseText);
             } catch (error) {
-                console.error('Server response:', responseText);
-                throw new Error('Server returned invalid response');
+                console.error('Failed to parse JSON response:', error);
+                throw new Error('Server returned invalid JSON response');
             }
 
-            if (!uploadResponse.ok || uploadData.error) {
-                throw new Error(uploadData.error || 'Upload failed');
+            if (!response.ok || !data.success) {
+                throw new Error(data.error || 'Upload failed');
             }
 
             progressBar.style.width = '50%';
+            statusDiv.textContent = 'Processing...';
 
             // Process the dataset
-            const processResponse = await fetch(`/api/process/${uploadData.dataset_id}`, {
-                method: 'POST'
+            const processResponse = await fetch(`/api/process/${data.dataset_id}`, {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json'
+                }
             });
 
             const processText = await processResponse.text();
+            console.log('Raw process response:', processText);
+
             let processData;
-            
             try {
                 processData = JSON.parse(processText);
             } catch (error) {
-                console.error('Server response:', processText);
-                throw new Error('Server returned invalid response during processing');
+                console.error('Failed to parse JSON response:', error);
+                throw new Error('Server returned invalid JSON response during processing');
             }
 
-            if (!processResponse.ok || processData.error) {
+            if (!processResponse.ok || !processData.success) {
                 throw new Error(processData.error || 'Processing failed');
             }
 
             progressBar.style.width = '100%';
+            statusDiv.textContent = 'Success!';
             showAlert('File uploaded and processed successfully', 'success');
-            
+
+            // Redirect to dashboard after success
             setTimeout(() => {
                 window.location.href = '/dashboard';
             }, 1500);
 
         } catch (error) {
             console.error('Error:', error);
-            showAlert(error.message || 'Error uploading file', 'danger');
             progressDiv.classList.add('d-none');
-            progressBar.style.width = '0%';
+            showAlert(error.message || 'Error uploading file', 'danger');
         }
     });
-}
+});
 
 async function loadBaseStations() {
     try {
-        const response = await fetch('/api/base-stations');
+        const response = await fetch('/api/base-stations', {
+            headers: {
+                'Accept': 'application/json'
+            }
+        });
+
         const responseText = await response.text();
-        
+        console.log('Raw base stations response:', responseText);
+
         let data;
         try {
             data = JSON.parse(responseText);
         } catch (error) {
-            console.error('Server response:', responseText);
-            throw new Error('Server returned invalid response');
+            console.error('Failed to parse JSON response:', error);
+            throw new Error('Server returned invalid JSON response');
         }
 
-        if (!response.ok || data.error) {
+        if (!response.ok || (data.success === false)) {
             throw new Error(data.error || 'Failed to fetch base stations');
         }
 
         const select = document.getElementById('baseStation');
         
         if (!Array.isArray(data)) {
-            throw new Error('Invalid base stations data');
+            throw new Error('Invalid base stations data format');
         }
 
         data.forEach(station => {

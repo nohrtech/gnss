@@ -21,27 +21,27 @@ def setup_upload_directory():
 @bp.route('/upload', methods=['POST'])
 @login_required
 def upload_file():
+    """Handle file upload and return JSON response."""
     try:
-        # Check if file was included
         if 'file' not in request.files:
             return jsonify({'error': 'No file provided'}), 400
-        
+
         file = request.files['file']
         if file.filename == '':
             return jsonify({'error': 'No file selected'}), 400
-            
+
         if not allowed_file(file.filename):
             return jsonify({'error': 'Invalid file type. Supported formats: NMEA, RINEX, XYZ'}), 400
 
-        # Ensure upload directory exists
+        # Create uploads directory if it doesn't exist
         upload_dir = os.path.join(current_app.root_path, 'uploads')
         os.makedirs(upload_dir, exist_ok=True)
-        
+
         # Save file
         filename = secure_filename(file.filename)
         file_path = os.path.join(upload_dir, filename)
         file.save(file_path)
-        
+
         # Create dataset entry
         dataset = Dataset(
             name=filename,
@@ -52,44 +52,45 @@ def upload_file():
         )
         db.session.add(dataset)
         db.session.commit()
-        
+
         return jsonify({
-            'message': 'File uploaded successfully',
+            'success': True,
             'dataset_id': dataset.id,
             'filename': filename
-        }), 200
-        
+        })
+
     except Exception as e:
         current_app.logger.error(f"Upload error: {str(e)}")
-        return jsonify({'error': 'Failed to upload file. Please try again.'}), 500
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 @bp.route('/process/<int:dataset_id>', methods=['POST'])
 @login_required
 def process_dataset(dataset_id):
+    """Process uploaded dataset and return JSON response."""
     try:
         dataset = Dataset.query.get_or_404(dataset_id)
-        
-        # Check ownership
         if dataset.user_id != current_user.id:
             return jsonify({'error': 'Unauthorized access'}), 403
-        
-        # Get base station coordinates if specified
+
+        # Process the file
+        file_path = os.path.join(current_app.root_path, 'uploads', dataset.name)
+        if not os.path.exists(file_path):
+            return jsonify({'error': 'Dataset file not found'}), 404
+
+        # Get base station if specified
         base_coords = None
         if dataset.base_station_id:
             base = BaseStation.query.get(dataset.base_station_id)
             if base:
                 base_coords = (base.location.latitude, base.location.longitude, base.altitude)
-        
-        # Initialize processor
+
+        # Initialize processor and process file
         processor = GNSSProcessor(base_station_coords=base_coords)
-        
-        # Process based on file type
-        file_path = os.path.join(current_app.root_path, 'uploads', dataset.name)
-        if not os.path.exists(file_path):
-            return jsonify({'error': 'Dataset file not found'}), 404
-            
         start_time = datetime.now()
-        
+
         try:
             if dataset.format_type in ['nmea']:
                 with open(file_path, 'r') as f:
@@ -100,58 +101,52 @@ def process_dataset(dataset_id):
                 results = processor.process_xyz(file_path)
             else:
                 return jsonify({'error': 'Unsupported file format'}), 400
+
         except Exception as e:
-            current_app.logger.error(f"Processing error: {str(e)}")
             dataset.processing_status = 'failed'
             db.session.commit()
-            return jsonify({'error': f'Error processing file: {str(e)}'}), 500
-            
-        # Calculate processing duration
+            return jsonify({'error': f'Processing error: {str(e)}'}), 500
+
+        # Save results
         duration = (datetime.now() - start_time).total_seconds()
-        
-        # Save analysis results
-        try:
-            analysis = AnalysisResult(
-                dataset_id=dataset.id,
-                reference_mode='fixed' if base_coords else 'floating',
-                horizontal_rmse=results['horizontal']['rmse'],
-                horizontal_std=results['horizontal']['std'],
-                horizontal_mean=results['horizontal']['mean'],
-                horizontal_max=results['horizontal']['max'],
-                horizontal_min=results['horizontal']['min'],
-                vertical_rmse=results['vertical']['rmse'],
-                vertical_std=results['vertical']['std'],
-                vertical_mean=results['vertical']['mean'],
-                vertical_max=results['vertical']['max'],
-                vertical_min=results['vertical']['min'],
-                reference_latitude=results['reference_position']['latitude'],
-                reference_longitude=results['reference_position']['longitude'],
-                reference_altitude=results['reference_position']['altitude'],
-                num_points=results['num_points'],
-                processing_duration=duration,
-                solution_quality=results.get('solution_quality'),
-                xyz_stats=results.get('xyz_stats')
-            )
-            
-            db.session.add(analysis)
-            dataset.processing_status = 'completed'
-            db.session.commit()
-            
-            return jsonify({
-                'message': 'Processing completed successfully',
-                'dataset_id': dataset.id,
-                'results': analysis.to_dict()
-            }), 200
-            
-        except Exception as e:
-            current_app.logger.error(f"Error saving results: {str(e)}")
-            dataset.processing_status = 'failed'
-            db.session.commit()
-            return jsonify({'error': 'Error saving analysis results'}), 500
-        
+        analysis = AnalysisResult(
+            dataset_id=dataset.id,
+            reference_mode='fixed' if base_coords else 'floating',
+            horizontal_rmse=results['horizontal']['rmse'],
+            horizontal_std=results['horizontal']['std'],
+            horizontal_mean=results['horizontal']['mean'],
+            horizontal_max=results['horizontal']['max'],
+            horizontal_min=results['horizontal']['min'],
+            vertical_rmse=results['vertical']['rmse'],
+            vertical_std=results['vertical']['std'],
+            vertical_mean=results['vertical']['mean'],
+            vertical_max=results['vertical']['max'],
+            vertical_min=results['vertical']['min'],
+            reference_latitude=results['reference_position']['latitude'],
+            reference_longitude=results['reference_position']['longitude'],
+            reference_altitude=results['reference_position']['altitude'],
+            num_points=results['num_points'],
+            processing_duration=duration,
+            solution_quality=results.get('solution_quality'),
+            xyz_stats=results.get('xyz_stats')
+        )
+
+        db.session.add(analysis)
+        dataset.processing_status = 'completed'
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'dataset_id': dataset.id,
+            'results': analysis.to_dict()
+        })
+
     except Exception as e:
-        current_app.logger.error(f"General processing error: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        current_app.logger.error(f"Processing error: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 @bp.route('/results/<int:dataset_id>', methods=['GET'])
 @login_required
@@ -181,6 +176,7 @@ def get_results(dataset_id):
 @bp.route('/base-stations', methods=['GET'])
 @login_required
 def list_base_stations():
+    """List available base stations."""
     try:
         stations = BaseStation.query.filter_by(is_active=True).all()
         return jsonify([{
@@ -190,7 +186,10 @@ def list_base_stations():
             'longitude': station.location.longitude,
             'altitude': station.altitude,
             'description': station.description
-        } for station in stations]), 200
+        } for station in stations])
     except Exception as e:
         current_app.logger.error(f"Error fetching base stations: {str(e)}")
-        return jsonify({'error': 'Error fetching base stations'}), 500
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
